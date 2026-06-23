@@ -1,0 +1,25 @@
+//@version=6
+indicator(title="Dual Fixed-TF EMA (v6)", shorttitle="Dual TF EMA", overlay=true)
+
+// ── EMA #1 inputs ──────────────────────────────────────────────────────────────
+grp1        = "EMA #1"
+ema1_src    = input.source(close,    "Source",     group=grp1)
+ema1_len    = input.int(50,          "Length",     minval=1, group=grp1)
+ema1_tf     = input.string("15",     "Timeframe",  options=["1","3","5","15","30","60","120","240","D","W","M"], group=grp1)
+ema1_color  = input.color(color.blue,"Color",      group=grp1)
+
+// ── EMA #2 inputs ──────────────────────────────────────────────────────────────
+grp2        = "EMA #2"
+ema2_src    = input.source(close,    "Source",     group=grp2)
+ema2_len    = input.int(200,         "Length",     minval=1, group=grp2)
+ema2_tf     = input.string("5",      "Timeframe",  options=["1","3","5","15","30","60","120","240","D","W","M"], group=grp2)
+ema2_color  = input.color(color.orange,"Color",    group=grp2)
+
+// ── calculations ───────────────────────────────────────────────────────────────
+// Note: request.security() computes the EMA on the selected timeframe, then maps it to the chart.
+ema1 = request.security(syminfo.tickerid, ema1_tf, ta.ema(ema1_src, ema1_len), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+ema2 = request.security(syminfo.tickerid, ema2_tf, ta.ema(ema2_src, ema2_len), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+// ── plots ─────────────────────────────────────────────────────────────────────
+plot(ema1, title="EMA #1", color=ema1_color, linewidth=2)
+plot(ema2, title="EMA #2", color=ema2_color, linewidth=2)

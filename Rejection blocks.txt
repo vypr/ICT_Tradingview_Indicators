@@ -1,0 +1,77 @@
+//@version=5
+indicator("ICT Rejection Blocks", overlay=true, max_boxes_count=500, max_lines_count=500)
+
+leftBars = input.int(3, title="Pivot Left Bars")
+rightBars = input.int(3, title="Pivot Right Bars")
+wickRatio = input.float(1.0, title="Wick-to-Body Ratio")
+matchDirection = input.bool(true, title="Require Matching Candle Direction")
+showMidline = input.bool(true, title="Show 50% Midline")
+
+bullColor = input.color(color.new(color.green, 90), title="Bullish Block Color")
+bullBorder = input.color(color.green, title="Bullish Border Color")
+bearColor = input.color(color.new(color.red, 90), title="Bearish Block Color")
+bearBorder = input.color(color.red, title="Bearish Border Color")
+borderWidth = input.int(1, title="Border Width")
+
+type RejectionBlock
+    box element
+    line midline
+    float invalidationPrice
+    bool isBullish
+
+var RejectionBlock[] activeBlocks = array.new<RejectionBlock>()
+
+ph = ta.pivothigh(leftBars, rightBars)
+pl = ta.pivotlow(leftBars, rightBars)
+
+if not na(ph)
+    pivotBar = bar_index - rightBars
+    pOpen = open[rightBars]
+    pClose = close[rightBars]
+    pHigh = high[rightBars]
+    body = math.abs(pOpen - pClose)
+    upperWick = pHigh - math.max(pOpen, pClose)
+    dirCheck = not matchDirection or (pClose < pOpen)
+    if upperWick >= body * wickRatio and upperWick > 0 and dirCheck
+        top = pHigh
+        bottom = math.max(pOpen, pClose)
+        bx = box.new(left=pivotBar, top=top, right=bar_index, bottom=bottom, bgcolor=bearColor, border_color=bearBorder, border_width=borderWidth)
+        ln = showMidline ? line.new(x1=pivotBar, y1=(top + bottom)/2, x2=bar_index, y2=(top + bottom)/2, color=bearBorder, width=borderWidth, style=line.style_dashed) : na
+        array.push(activeBlocks, RejectionBlock.new(bx, ln, top, false))
+
+if not na(pl)
+    pivotBar = bar_index - rightBars
+    pOpen = open[rightBars]
+    pClose = close[rightBars]
+    pLow = low[rightBars]
+    body = math.abs(pOpen - pClose)
+    lowerWick = math.min(pOpen, pClose) - pLow
+    dirCheck = not matchDirection or (pClose > pOpen)
+    if lowerWick >= body * wickRatio and lowerWick > 0 and dirCheck
+        top = math.min(pOpen, pClose)
+        bottom = pLow
+        bx = box.new(left=pivotBar, top=top, right=bar_index, bottom=bottom, bgcolor=bullColor, border_color=bullBorder, border_width=borderWidth)
+        ln = showMidline ? line.new(x1=pivotBar, y1=(top + bottom)/2, x2=bar_index, y2=(top + bottom)/2, color=bullBorder, width=borderWidth, style=line.style_dashed) : na
+        array.push(activeBlocks, RejectionBlock.new(bx, ln, bottom, true))
+
+if array.size(activeBlocks) > 0
+    i = array.size(activeBlocks) - 1
+    while i >= 0
+        RejectionBlock currentBlock = array.get(activeBlocks, i)
+        invalidated = false
+        if currentBlock.isBullish
+            if close < currentBlock.invalidationPrice
+                invalidated := true
+        else
+            if close > currentBlock.invalidationPrice
+                invalidated := true
+        if invalidated
+            box.delete(currentBlock.element)
+            if not na(currentBlock.midline)
+                line.delete(currentBlock.midline)
+            array.remove(activeBlocks, i)
+        else
+            box.set_right(currentBlock.element, bar_index)
+            if not na(currentBlock.midline)
+                line.set_x2(currentBlock.midline, bar_index)
+        i := i - 1

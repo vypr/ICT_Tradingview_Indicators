@@ -1,0 +1,195 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © OutofOptions
+// @version=5
+
+indicator('Liquidity Swings & Sweeps', shorttitle='Liquidity Swings/Sweeps', overlay=true)
+
+Llength = input.int(5, title="Swing Sensitivity (Left)", group = "Settings", minval = 1, tooltip="Swing must be highest/lowest specified # of bars/candles to the left, left is what sweeps liquidty")
+Rlength = input.int(2, title="Swing Sensitivity (Right)", group = "Settings", minval = 1, tooltip="Swing must be highest/lowest specified # of bars/candles to the right, right is the measure of reaction to the liquidity sweep")
+maximumLiquidity = input.bool(true, title="Find Maximum Liquidity", group = "Settings", tooltip="Whether to find maximum liquidity or only swing liquidity")
+upLiquidityColor = input.color(color.new(color.red,35), title = "High/Low Liquidity Line Color", inline = "visualline", group ="Appearance")
+downLiquidityColor = input.color(color.new(color.teal,35), title = " ", inline = "visualline",group = "Appearance")
+lineWidth = input.int(1, "Line Width", minval=1, maxval=5, step=1, group="Appearance", tooltip="Adjust the thickness of the lines. Range: 1 (thin) to 5 (thick).", display = display.none)
+drawTakenLiquidityLabel = input.bool(true, title="Show Luquidity Sweep Label/Rating", group="Appearance", tooltip="Whether or not to draw a label with info on taken liquidity & liquidity sweep rating", display = display.none)
+
+var alerts = map.new<string, bool>()
+alert_a = input.bool(false, "❄️ Weak", group="Alert on Liquidity Sweep", display = display.none, inline="alerts")
+alert_b = input.bool(false, "✅ Ok", group="Alert on Liquidity Sweep", display = display.none, inline="alerts")
+alert_c = input.bool(true, "🔥 Strong", group="Alert on Liquidity Sweep", display = display.none, inline="alerts")
+alert_d = input.bool(true, "💥 Very Strong", group="Alert on Liquidity Sweep", display = display.none, inline="alerts", tooltip="Which sweeps to alert on")
+
+alertMessage = input.text_area("Liquidity Sweep: ", title="Alert Message Prefix", group="Alert on Liquidity Sweep", display = display.none, tooltip="Text to start the alert message from, can be empty")
+
+var const string tz = "America/New_York"
+var const string tf = "HH:mm:ss"
+
+var const bool debug = false
+
+DEBUG(string type, string msg) =>
+    if (debug)
+        switch type
+            "e" => log.error(msg)
+            "w" => log.warning(msg)
+            => log.info(msg)
+
+// Render time
+TF(t) =>
+    str.format_time(t, tf, tz)
+
+type liquidity
+    float price
+    int time = 0
+    bool broken = false
+    line drawLine = na
+    line breakLine = na
+    label breakLabel = na
+    int brokenTime = 0
+    bool current = false
+
+// Remove drawings from swing
+CD(liquidity swing) =>
+    line.delete(swing.drawLine)
+    line.delete(swing.breakLine)
+    label.delete(swing.breakLabel)
+
+var array<liquidity> bullishLiquidity = array.new<liquidity>()
+var array<liquidity> bearishLiquidity = array.new<liquidity>()
+
+type HL
+    float price
+    int time
+
+var array<HL> HLA = array.new<HL>()
+var array<HL> LLA = array.new<HL>()
+
+if maximumLiquidity
+    p1 = ta.pivothigh(high, 1, 1)
+    p2 = ta.pivotlow(low, 1, 1)
+    if (not na(p1))
+        HLA.push(HL.new(price = p1, time = time[1]))
+    if (not na(p2))
+        LLA.push(HL.new(price = p2, time = time[1]))
+
+findSubSwing(array<HL> list, bool bullish, liquidity swing, liquidity last_broken, int max_time) =>
+    int b = list.size() - 1
+
+    while (b > 0)
+        c = array.get(list, b)
+        b -= 1
+        if (last_broken.time > 0  and c.time > last_broken.time)
+            array.remove(list, b + 1)
+            continue
+
+        if c.time >= swing.time
+            continue
+        if (max_time > c.time) or (bullish ? c.price >= swing.price : c.price <= swing.price)
+            break
+        if na(last_broken.price) or (bullish ? c.price >= last_broken.price : c.price <= last_broken.price)
+            array.remove(list, b + 1)
+            last_broken.time := c.time
+            last_broken.price := c.price
+            last_broken.brokenTime := swing.time
+
+ph = ta.pivothigh(high, Llength, Rlength)
+pl = ta.pivotlow(low, Llength, Rlength)
+
+if not na(ph)
+    array.push(bearishLiquidity, liquidity.new(price = ph, time = time[Rlength]))
+
+if not na(pl)
+    array.push(bullishLiquidity, liquidity.new(price = pl, time = time[Rlength]))
+
+render(array<liquidity> swingArray, bool bullish) =>
+    int n = array.size(swingArray) - 1
+    color clr = bullish ? upLiquidityColor : downLiquidityColor
+
+    while n > 0
+        liquidity swing = array.get(swingArray, n)
+        bool validSwing = bullish ? (swing.price >= high) : (swing.price <= low)
+
+        if (validSwing == false)
+            if swing.broken == false
+                swing.broken := true
+                swing.brokenTime := time
+                if swing.current
+                    CD(swing)
+            n -= 1
+            continue
+        
+        if (swing.current == false)
+            swing.current := true // found
+            swing.drawLine := line.new(x1=swing.time, y1=swing.price, x2=last_bar_time, y2=swing.price, xloc=xloc.bar_time, width=lineWidth, color=clr)
+
+            liquidity prev_swing = na
+            liquidity last_broken = na
+
+            while (n > 0)
+                n -= 1
+                prev_swing := array.get(swingArray, n)
+                // swing is now lower/high end loop
+                if bullish ? (prev_swing.price > swing.price) : (swing.price > prev_swing.price)
+                    break
+
+                if (na(last_broken)) // no break
+                    last_broken := prev_swing
+                else if bullish ? (prev_swing.price >= last_broken.price) : (prev_swing.price <= last_broken.price) // new swing is better
+                    last_broken := prev_swing
+
+                if last_broken.current
+                    CD(last_broken)
+                    if (swing.time >= last_broken.time)
+                        array.remove(swingArray, n)
+
+            if (maximumLiquidity)
+                // low swing check
+                if (na(last_broken))
+                    last_broken := liquidity.new(price=na)
+
+                findSubSwing(bullish ? HLA : LLA, bullish, swing, last_broken, prev_swing.time)
+
+            if (not na(last_broken))
+                if (last_broken.price != swing.price)
+                    bt = last_broken.brokenTime > 0 ? last_broken.brokenTime : swing.time
+                    swing.breakLine := line.new(x1=last_broken.time, y1=last_broken.price, x2=bt, y2=last_broken.price, xloc=xloc.bar_time, width=lineWidth, color=clr, style=line.style_dashed)
+
+                    if drawTakenLiquidityLabel == true
+                        bool do_alert = false
+                        float timeD = math.round((bt - last_broken.time) / 60000, 2) // minutes
+                        int hours = 0
+                        float pd = bullish ? swing.price - last_broken.price : last_broken.price - swing.price
+                        string rating = "❄️"
+                        int tfs = timeframe.in_seconds()
+
+                        if (timeD >= 60)
+                            hours := math.floor(timeD / 60)
+                            timeD -= hours * 60
+                            rating := "💥"
+                            do_alert := alert_d
+                        else if (timeD >= 15)
+                            rating := "🔥"
+                            do_alert := alert_c
+                        else if timeD >= 5
+                            rating := pd >= 10 ? "🔥" : "✅"
+                            do_alert := alert_b
+                        else if  pd >= 10
+                            rating := "✅"
+                            do_alert := alert_b
+                        else
+                            do_alert := alert_a
+
+                        string tooptip = str.tostring(last_broken.price) + " @ " + TF(last_broken.time) + " swept @ " + TF(bt) + " in " + (hours>0 ? str.tostring(hours) + "h" : "") + str.tostring(timeD) + "m"
+                        
+                        if do_alert and (time - bt) < tfs * 5 * 1000 
+                            alert(alertMessage + rating + " " + tooptip, alert.freq_once_per_bar)
+
+                        dbars = (bt - last_broken.time) / 1000 / tfs
+                        xpos = dbars > 30 ? bt - 10 * tfs * 1000 : math.round(math.avg(last_broken.time, bt))
+                    
+                        swing.breakLabel := label.new(x=xpos, y=last_broken.price, xloc=xloc.bar_time, color=clr,style=label.style_text_outline, text=rating, tooltip=tooptip, size=size.small, textalign = text.align_center)
+        else
+            swing.drawLine.set_x2(last_bar_time)
+        break
+
+if barstate.islast
+    render(bearishLiquidity, true)
+    render(bullishLiquidity, false)
