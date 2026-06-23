@@ -4,8 +4,8 @@
 
 indicator("ICT Rejection Blocks by vypr", overlay=true, max_boxes_count=500, max_lines_count=500)
 
-leftBars = input.int(3, title="Pivot Left Bars")
-rightBars = input.int(3, title="Pivot Right Bars")
+leftBars = input.int(1, title="Pivot Left Bars")
+rightBars = input.int(1, title="Pivot Right Bars")
 wickRatio = input.float(1.0, title="Wick-to-Body Ratio")
 matchDirection = input.bool(true, title="Require Matching Candle Direction")
 showMidline = input.bool(true, title="Show 50% Midline")
