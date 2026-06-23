@@ -1,5 +1,6 @@
 //@version=6
-indicator(title="Dual Fixed-TF EMA (v6)", shorttitle="Dual TF EMA", overlay=true)
+//vypr 
+indicator(title="Dual Fixed-TF EMA (v6) by vypr", shorttitle="Dual TF EMA", overlay=true)
 
 // ── EMA #1 inputs ──────────────────────────────────────────────────────────────
 grp1        = "EMA #1"
